@@ -25,6 +25,8 @@ class Sniffer:
         self.proto = proto
         self.af = 'IPv4' if self.proto == ETH_P_IP else 'IPv6'
         self.outpath = outpath + '.' + self.af
+        self.stats = {}
+        self.last_write_timestamp = datetime.now()
         try:
             print( 'Starting ' + self.af + ' sniffer..' )
             self.outfile = open( self.outpath, 'w' )
@@ -39,6 +41,16 @@ class Sniffer:
         except Exception:
             raise
 
+    def write_outfile( self, dump_all=False ):
+        cur_timestamp = datetime.now().strftime( '%Y-%m-%d %H:%M' )
+        for stat_tuple in list( self.stats ):
+            ( timestamp, src, dst, transport, sport, dport ) = stat_tuple
+            if dump_all or cur_timestamp[ -2: ] != timestamp[ -2: ]:  # Compare minute values
+                self.outfile.write( f"{ timestamp } { src } { dst } { transport } { sport } { dport } { self.stats[ stat_tuple ] }\n" )
+                del self.stats[ stat_tuple ]
+        self.outfile.flush()
+        self.last_write_timestamp = datetime.now()
+
     def sniff( self ):
         while not self.stop_event.is_set():
             sock_ready = select.select( [ self.sock ], [], [], SELECT_TIMEOUT )
@@ -48,21 +60,27 @@ class Sniffer:
                 for ip_class in [ IP, IPv6 ]:
                     if ip_class in packet:
                         ip_layer = packet.getlayer( ip_class )
-                        self.outfile.write( str( datetime.now() ) + ' ' )
-                        self.outfile.write( str( ip_layer.getfieldval( 'src' ) ) + ' ' )
-                        self.outfile.write( str( ip_layer.getfieldval( 'dst' ) ) + ' ' )
+                        timestamp = datetime.now()
+                        src = str( ip_layer.getfieldval( 'src' ) )
+                        dst = str( ip_layer.getfieldval( 'dst' ) )
                         found_transport = False
                         for transport_class in [ TCP, UDP ]:
                             if transport_class in packet:
                                 found_transport = True
                                 transport_layer = packet.getlayer( transport_class )
-                                self.outfile.write( ( 'TCP' if transport_class == TCP else 'UDP' ) + ' ' )
-                                self.outfile.write( str( transport_layer.getfieldval( 'sport' ) ) + ' ' )
-                                self.outfile.write( str( transport_layer.getfieldval( 'dport' ) ) + ' ' )
+                                transport = 'TCP' if transport_class == TCP else 'UDP'
+                                sport = str( transport_layer.getfieldval( 'sport' ) )
+                                dport = str( transport_layer.getfieldval( 'dport' ) )
                         if not found_transport:
-                            self.outfile.write( 'OTH' + ' 0 0' )
-                        self.outfile.write( '\n' )
-                        self.outfile.flush()
+                            transport = 'OTH'
+                            sport = dport = '0'
+                        # Update stats dictionary
+                        stat_tuple = ( timestamp.strftime( '%Y-%m-%d %H:%M' ), src, dst, transport, sport, dport )
+                        self.stats[ stat_tuple ] = self.stats.get( stat_tuple, 0 ) + 1
+                        # Write output to file if a minute or more has passed since last write
+                        if ( timestamp - self.last_write_timestamp ).seconds > 60:
+                            self.write_outfile()
+        self.write_outfile( dump_all=True )
         self.outfile.close()
         self.sock.close()
 
@@ -78,6 +96,8 @@ def get_parser() -> ArgumentParser:
     parser.add_argument( '-o', '--outpath', dest='outpath',
                          default='stats', type=str,
                          help="Path to the output files (OUTPATH.ipv4 and OUTPATH.ipv6 will be created). Default: <pwd>/stats" )
+    parser.add_argument( '-d', '--display', action='store_true',
+                         help="Display results based on packet sniff stats. Use with -o/--outpath to specify path to the output files." )
 
     return parser
 
@@ -91,6 +111,7 @@ def main():
         stop_event = threading.Event()
         v4sniffer = Sniffer( stop_event, ETH_P_IP, args.outpath, args.interface )
         v6sniffer = Sniffer( stop_event, ETH_P_IPV6, args.outpath, args.interface )
+        print( "Startup complete. Press Ctrl+C to exit." )
         stop_event.wait()
     except OSError as e:
         sys.exit( "OSError: " + str( e ) )
