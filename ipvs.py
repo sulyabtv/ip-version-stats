@@ -6,6 +6,9 @@ import threading
 import select
 from datetime import datetime
 
+import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.inet6 import IPv6
@@ -105,6 +108,26 @@ def main():
     # Parse command line arguments
     parser = get_parser()
     args = parser.parse_args()
+
+    if args.display:
+        counts = { 'IPv4': {}, 'IPv6': {} }
+        for ip_version in counts:
+            with open( args.outpath +  '.' + ip_version ) as statsfile:
+                for line in statsfile.readlines():
+                    stat_tuple = line.split()
+                    timestamp = stat_tuple[ 0 ] + ' ' + stat_tuple[ 1 ]
+                    counts[ ip_version ][ timestamp ] = counts[ ip_version ].get( timestamp, 0 ) + int( stat_tuple[ -1 ] )
+        # Set up plot
+        fig, ( ( ax_ipv4, ax_ipv6 ) , ( ax_percentage, _ ) ) = plt.subplots( 2, 2 )
+        plt.ion()
+        plt.get_current_fig_manager().full_screen_toggle()
+        ax_ipv4.plot( counts[ 'IPv4' ].keys(), counts[ 'IPv4' ].values() )
+        ax_ipv4.set_title( 'IPv4 packet count vs Time' )
+        ax_ipv4.set_xlabel( 'Timestamp' )
+        ax_ipv4.set_ylabel( '# of IPv4 packets sent/received' )
+        plt.draw()
+        plt.waitforbuttonpress()
+        sys.exit( 0 )
 
     # Run sniffers
     try:

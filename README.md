@@ -6,5 +6,5 @@ A tool to monitor network traffic and obtain IPv4 vs IPv6 traffic statistics
     - cd <project_root>
     - mkdir venv
     - python3 -m venv venv
-    - bash venv/bin/activate
+    - source venv/bin/activate
     - pip3 install -r requirements.txt
