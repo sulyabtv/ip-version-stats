@@ -16,8 +16,8 @@ def get_parser() -> ArgumentParser:
 
     # Arguments
     parser.add_argument( '-o', '--outpath', dest='outpath',
-                         default='stats', type=str,
-                         help="Path to the output files (OUTPATH.ipv4 and OUTPATH.ipv6 created by the sniffer tool). Default: <pwd>/stats" )
+                         default='stats.txt', type=str,
+                         help="Path to the output file created by the sniffer tool. Default: <pwd>/stats.txt" )
 
     return parser
 
@@ -59,17 +59,19 @@ def main():
     resolved = {}
     unresolved = []
     domain_counts: dict[ str, dict ] = {}
-    for ip_version in counts:
-        with open( args.outpath +  '.' + ip_version ) as statsfile:
-            for line in statsfile.readlines():
-                stat_tuple = line.split()
-                timestamp = stat_tuple[ 0 ] + ' ' + stat_tuple[ 1 ]
-                counts[ ip_version ][ timestamp ] = counts[ ip_version ].get( timestamp, 0 ) + int( stat_tuple[ -1 ] )
-                domain = resolve_domain( stat_tuple[ 2 ], stat_tuple[ 3 ], resolved, unresolved )
-                if domain:
-                    if domain not in domain_counts:
-                        domain_counts[ domain ] = { 'IPv4': 0, 'IPv6': 0 }
-                    domain_counts[ domain ][ ip_version ] += int( stat_tuple[ -1 ] )
+    with open( args.outpath ) as statsfile:
+        for line in statsfile.readlines():
+            stat_tuple = line.split()
+            timestamp = stat_tuple[ 0 ] + ' ' + stat_tuple[ 1 ]
+            ip_version = 'IPv4' if stat_tuple[ 2 ] == '4' else 'IPv6'
+            ( src, dst ) = stat_tuple[ 3:5 ]
+            count = int( stat_tuple[ -1 ] )
+            counts[ ip_version ][ timestamp ] = counts[ ip_version ].get( timestamp, 0 ) + count
+            domain = resolve_domain( src, dst, resolved, unresolved )
+            if domain:
+                if domain not in domain_counts:
+                    domain_counts[ domain ] = { 'IPv4': 0, 'IPv6': 0 }
+                domain_counts[ domain ][ ip_version ] += count
 
     # Set up plot
     _, ( ax_count, ax_domainwise ) = plt.subplots( 2, 1 )
