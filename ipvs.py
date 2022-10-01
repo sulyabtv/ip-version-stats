@@ -23,6 +23,7 @@ class Sniffer:
             self.outfile = open( self.outpath, 'w' )
             self.sniffer = AsyncSniffer( iface=self.interface,
                                          session=IPSession,
+                                         store=False,
                                          prn=lambda packet: self.process_packet( packet ) )
             self.sniffer.start()
             print( "Started sniffer" + ( "" if not self.interface else " on interface " + self.interface ) )
