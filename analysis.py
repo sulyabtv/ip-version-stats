@@ -2,12 +2,14 @@ from argparse import ArgumentParser
 from operator import itemgetter
 import sys
 from typing import Optional
+from datetime import datetime
 
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
+from matplotlib import dates
 import numpy
+from tqdm import tqdm
 
-from socket import gethostbyaddr
+from socket import gethostbyaddr, gethostname, getaddrinfo
 from ipaddress import ip_address
 
 def get_parser() -> ArgumentParser:
@@ -34,14 +36,14 @@ def _resolve( addr: str ):
     except OSError:
         return None
 
-def resolve_domain( from_addr: str, to_addr: str, resolved: dict[ str, Optional[ str ] ], unresolved: list[ str ] ):
-    if resolved.get( from_addr, None ):
+def resolve_domain( from_addr: str, to_addr: str, resolved: dict[ str, Optional[ str ] ], unresolved: list[ str ], ignored: list[ str ] ):
+    if from_addr in resolved:
         return resolved[ from_addr ]
-    elif resolved.get( to_addr, None ):
+    elif to_addr in resolved:
         return resolved[ to_addr ]
     else:
         for addr in ( from_addr, to_addr ):
-            if addr not in unresolved:
+            if addr not in ignored and addr not in unresolved:
                 result = _resolve( addr )
                 if result:
                     resolved[ addr ] = result
@@ -56,18 +58,19 @@ def main():
     args = parser.parse_args()
 
     counts = { 'IPv4': {}, 'IPv6': {} }
-    resolved = {}
-    unresolved = []
+    resolved = {}   # Cache of resolved IPs
+    unresolved = [] # Tried resolving but failed
+    ignored = [ entry[ -1 ][ 0 ] for entry in getaddrinfo( gethostname(), 0 ) ] # Do not resolve our own IP address
     domain_counts: dict[ str, dict ] = {}
     with open( args.outpath ) as statsfile:
-        for line in statsfile.readlines():
+        for line in tqdm( statsfile.readlines() ):
             stat_tuple = line.split()
-            timestamp = stat_tuple[ 0 ] + ' ' + stat_tuple[ 1 ]
+            timestamp = datetime.strptime( stat_tuple[ 0 ] + ' ' + stat_tuple[ 1 ], '%Y-%m-%d %H:%M' )
             ip_version = 'IPv4' if stat_tuple[ 2 ] == '4' else 'IPv6'
             ( src, dst ) = stat_tuple[ 3:5 ]
             count = int( stat_tuple[ -1 ] )
             counts[ ip_version ][ timestamp ] = counts[ ip_version ].get( timestamp, 0 ) + count
-            domain = resolve_domain( src, dst, resolved, unresolved )
+            domain = resolve_domain( src, dst, resolved, unresolved, ignored )
             if domain:
                 if domain not in domain_counts:
                     domain_counts[ domain ] = { 'IPv4': 0, 'IPv6': 0 }
@@ -83,7 +86,8 @@ def main():
     ax_count.set_title( 'IPv4 and IPv6 packet counts vs Time' )
     ax_count.set_xlabel( 'Timestamp' )
     ax_count.set_ylabel( '# of packets sent/received' )
-    ax_count.xaxis.set_major_locator( MaxNLocator( 5 ) )
+    ax_count.xaxis.set_major_formatter( dates.DateFormatter( '%Y-%m-%d %H:%M' ) )
+    ax_count.xaxis.set_major_locator( dates.AutoDateLocator() )
     ax_count.legend( loc='upper right' )
     # Plot 2: IPv4 vs IPv6 stats for domains with the highest traffic
     domain_totals = sorted( { domain: sum( counts.values() ) for domain, counts in domain_counts.items() }.items(),

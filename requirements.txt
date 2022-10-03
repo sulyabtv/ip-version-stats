@@ -1,1 +1,4 @@
-scapy==2.4.5
+matplotlib == 3.6.0
+numpy == 1.23.3
+scapy == 2.4.5
+tqdm == 4.64.1
