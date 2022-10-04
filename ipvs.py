@@ -5,7 +5,7 @@ from typing import Optional
 import threading
 from datetime import datetime
 
-from scapy.all import get_if_list
+from scapy.all import get_if_list, conf
 from scapy.sendrecv import AsyncSniffer
 from scapy.sessions import IPSession
 from scapy.packet import Packet
@@ -118,7 +118,14 @@ def main():
     sniffer.stop()
 
 if __name__ == "__main__":
-    # Proceed only if run as root
-    if os.getuid() != 0:
-        sys.exit( "Please run this tool as root/administrator." )
+    # Proceed on Linux only if run as root
+    if os.name == 'posix':
+        if os.getuid() != 0:
+            sys.exit( "Please run this tool as root/administrator." )
+    # If running on Windows, do not run in promiscuous mode
+    elif os.name == 'nt':
+        conf.sniff_promisc = False
+    # java is untested for now
+    else:
+        sys.exit( "Unsupported platform" )
     main()

@@ -20,6 +20,9 @@ def get_parser() -> ArgumentParser:
     parser.add_argument( '-o', '--outpath', dest='outpath',
                          default='stats.txt', type=str,
                          help="Path to the output file created by the sniffer tool. Default: <pwd>/stats.txt" )
+    parser.add_argument( '-rt', '--require-transport', dest='require_transport',
+                         default=False, action='store_true',
+                         help="Only consider TCP/UDP flows" )
 
     return parser
 
@@ -65,6 +68,8 @@ def main():
     with open( args.outpath ) as statsfile:
         for line in tqdm( statsfile.readlines() ):
             stat_tuple = line.split()
+            if args.require_transport and stat_tuple[ 5 ] == 'OTH':
+                continue
             timestamp = datetime.strptime( stat_tuple[ 0 ] + ' ' + stat_tuple[ 1 ], '%Y-%m-%d %H:%M' )
             ip_version = 'IPv4' if stat_tuple[ 2 ] == '4' else 'IPv6'
             ( src, dst ) = stat_tuple[ 3:5 ]
