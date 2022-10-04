@@ -13,8 +13,7 @@ from socket import gethostbyaddr, gethostname, getaddrinfo
 from ipaddress import ip_address
 
 def get_parser() -> ArgumentParser:
-    parser = ArgumentParser( description="IP-Version-Stats: A tool to monitor network traffic and obtain IPv4 vs IPv6 traffic statistics. "
-                                         "This tool needs to be run as root/administrator." )
+    parser = ArgumentParser( description="IP-Version-Stats: A tool to monitor network traffic and obtain IPv4 vs IPv6 traffic statistics." )
 
     # Arguments
     parser.add_argument( '-o', '--outpath', dest='outpath',

@@ -72,7 +72,7 @@ class Sniffer:
 
 def get_parser() -> ArgumentParser:
     parser = ArgumentParser( description="IP-Version-Stats: A tool to monitor network traffic and obtain IPv4 vs IPv6 traffic statistics. "
-                                         "This tool needs to be run as root/administrator." )
+                                         "This sniffer tool needs to be run as root/administrator." )
 
     # Arguments
     parser.add_argument( '-i', '--interface', dest='interface',
