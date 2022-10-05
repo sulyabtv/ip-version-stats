@@ -94,6 +94,17 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
 
+    # Proceed on Linux only if run as root
+    if os.name == 'posix':
+        if os.getuid() != 0:
+            sys.exit( "Please run this tool as root/administrator." )
+    # If running on Windows, do not run in promiscuous mode
+    elif os.name == 'nt':
+        conf.sniff_promisc = False
+    # java is untested for now
+    else:
+        sys.exit( "Unsupported platform" )
+
     # Sanity checks
     if args.duration is not None and args.duration <= 0:
         sys.exit( "Error: Duration must be an integer greater than 0" )
@@ -118,14 +129,4 @@ def main():
     sniffer.stop()
 
 if __name__ == "__main__":
-    # Proceed on Linux only if run as root
-    if os.name == 'posix':
-        if os.getuid() != 0:
-            sys.exit( "Please run this tool as root/administrator." )
-    # If running on Windows, do not run in promiscuous mode
-    elif os.name == 'nt':
-        conf.sniff_promisc = False
-    # java is untested for now
-    else:
-        sys.exit( "Unsupported platform" )
     main()
