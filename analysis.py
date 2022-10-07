@@ -9,7 +9,7 @@ from matplotlib import dates
 import numpy
 from tqdm import tqdm
 
-from socket import gethostbyaddr, gethostname, getaddrinfo
+from socket import gethostbyaddr
 from ipaddress import ip_address
 from pyasn import pyasn
 

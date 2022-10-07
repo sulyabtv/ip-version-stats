@@ -4,6 +4,7 @@ import os
 from typing import Optional
 import threading
 from datetime import datetime
+import signal
 
 from scapy.all import get_if_list, conf
 from scapy.sendrecv import AsyncSniffer
@@ -89,6 +90,9 @@ def get_parser() -> ArgumentParser:
 
     return parser
 
+def _raiseKeyboardInterrupt( *args ):  # Hack to make Ctrl+C work in Windows
+    raise KeyboardInterrupt
+
 def main():
     # Parse command line arguments
     parser = get_parser()
@@ -119,6 +123,7 @@ def main():
             print( "Sniffer will exit automatically in " + str( args.duration ) + " seconds." )
         else:
             print( "Press Ctrl+C (or equivalent) to stop the sniffer." )
+        signal.signal( signal.SIGINT, _raiseKeyboardInterrupt )
         stop_event.wait( timeout=args.duration )
     except OSError as e:
         sys.exit( "OSError: " + str( e ) )
