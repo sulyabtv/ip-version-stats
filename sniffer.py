@@ -1,10 +1,9 @@
 from argparse import ArgumentParser
 import sys
 import os
+import time
 from typing import Optional
-import threading
 from datetime import datetime
-import signal
 
 from scapy.all import get_if_list, conf
 from scapy.sendrecv import AsyncSniffer
@@ -41,7 +40,8 @@ class Sniffer:
         for stat_tuple in list( self.stats ):
             ( timestamp, version, src, dst, transport, sport, dport ) = stat_tuple
             if dump_all or cur_timestamp[ -2: ] != timestamp[ -2: ]:  # Compare minute values
-                self.outfile.write( f"{ timestamp } { version } { src } { dst } { transport } { sport } { dport } { self.stats[ stat_tuple ] }\n" )
+                self.outfile.write( f"{ timestamp } { version } { src } { dst } { transport } { sport } { dport } "
+                                    f"{ self.stats[ stat_tuple ][ 'count' ] } { self.stats[ stat_tuple ][ 'len' ] }\n" )
                 del self.stats[ stat_tuple ]
         self.outfile.flush()
         self.last_write_timestamp = datetime.now()
@@ -53,6 +53,10 @@ class Sniffer:
                 timestamp = datetime.now()
                 src = str( ip_layer.getfieldval( 'src' ) )
                 dst = str( ip_layer.getfieldval( 'dst' ) )
+                if ip_class == IP:
+                    len = ip_layer.getfieldval( 'len' ) - ( 4 * ip_layer.getfieldval( 'ihl' ) ) # Packet size minus header size
+                else:   # IPv6
+                    len = ip_layer.getfieldval( 'plen' )    # Ignoring Jumbo Payloads for now
                 found_transport = False
                 for transport_class in [ TCP, UDP ]:
                     if transport_class in packet:
@@ -66,7 +70,10 @@ class Sniffer:
                     sport = dport = '0'
                 # Update stats dictionary
                 stat_tuple = ( timestamp.strftime( '%Y-%m-%d %H:%M' ), "4" if ip_class == IP else "6", src, dst, transport, sport, dport )
-                self.stats[ stat_tuple ] = self.stats.get( stat_tuple, 0 ) + 1
+                if stat_tuple not in self.stats:
+                    self.stats[ stat_tuple ] = { 'count': 0, 'len': 0 }
+                self.stats[ stat_tuple ][ 'count' ] += 1
+                self.stats[ stat_tuple ][ 'len' ] += len
                 # Write output to file if a minute or more has passed since last write
                 if ( timestamp - self.last_write_timestamp ).seconds > 60:
                     self.write_outfile()
@@ -89,9 +96,6 @@ def get_parser() -> ArgumentParser:
                          help="Path to the output file (OUTPATH will be created or overwritten). Default: <pwd>/stats.txt" )
 
     return parser
-
-def _raiseKeyboardInterrupt( *args ):  # Hack to make Ctrl+C work in Windows
-    raise KeyboardInterrupt
 
 def main():
     # Parse command line arguments
@@ -117,14 +121,14 @@ def main():
 
     # Run sniffer
     try:
-        stop_event = threading.Event()
         sniffer = Sniffer( args.outpath, interface=args.interface )
         if args.duration is not None:
-            print( "Sniffer will exit automatically in " + str( args.duration ) + " seconds." )
+            print( "Sniffer will exit automatically in " + str( args.duration ) + " seconds. Press Ctrl+C (or equivalent) to stop early." )
+            time.sleep( args.duration )
         else:
             print( "Press Ctrl+C (or equivalent) to stop the sniffer." )
-        signal.signal( signal.SIGINT, _raiseKeyboardInterrupt )
-        stop_event.wait( timeout=args.duration )
+            while True:
+                time.sleep( 0.5 )
     except OSError as e:
         sys.exit( "OSError: " + str( e ) )
     except KeyboardInterrupt:
