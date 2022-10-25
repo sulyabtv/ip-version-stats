@@ -10,6 +10,8 @@ import threading
 
 from scapy.all import get_if_list
 
+NUM_LINES_PER_CHUNK = 5000
+
 class Sniffer:
     def __init__( self, outpath: str, interface: Optional[ str ] ):
         self.outpath = outpath
@@ -17,14 +19,18 @@ class Sniffer:
         self.stats = {}
         self.last_write_timestamp = datetime.now()
         self.tcpdump_process = None
-        self.stop_event = threading.Event()
+        self.sniffer_stop_event = threading.Event()
+        self.parser_stop_event = threading.Event()
         self.pattern = re.compile( "(.*):\d\d\.\d+ (IP|IP6) (.*)\.(\d+) > (.*)\.(\d+): (UDP|tcp).* (\d+)" )
+        self.lines = []
         try:
             print( "Starting sniffer" + ( "" if not self.interface else " on interface " + self.interface ) + ".." )
             self.outfile = open( self.outpath, 'a' )
-            self.sniff_thread = threading.Thread( target=self.sniff, args=(), name='sniff_thread' )
             self.launch_tcpdump()
-            self.sniff_thread.start()
+            self.sniffer_thread = threading.Thread( target=self.sniff, args=(), name='sniffer_thread' )
+            self.parser_thread = threading.Thread( target=self.parse, args=(), name='parser_thread' )
+            self.sniffer_thread.start()
+            self.parser_thread.start()
             print( "Started sniffer" + ( "" if not self.interface else " on interface " + self.interface ) )
         except Exception:
             raise
@@ -41,31 +47,42 @@ class Sniffer:
         self.last_write_timestamp = datetime.now()
 
     def process_line( self, line: str ):
-        if line is not None:
-            line = line.decode( 'utf-8' )
-            if 'IP' not in line:    # '' or '\n' or similar junk
-                return None
-            ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport, length ) = self.pattern.match( line ).groups()
-            # Update stats dictionary
-            stat_tuple = ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport )
-            if stat_tuple not in self.stats:
-                self.stats[ stat_tuple ] = { 'count': 0, 'len': 0 }
-            self.stats[ stat_tuple ][ 'count' ] += 1
-            self.stats[ stat_tuple ][ 'len' ] += int( length )
-            return timestamp
+        ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport, length ) = self.pattern.match( line ).groups()
+        # Update stats dictionary
+        stat_tuple = ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport )
+        if stat_tuple not in self.stats:
+            self.stats[ stat_tuple ] = { 'count': 0, 'len': 0 }
+        self.stats[ stat_tuple ][ 'count' ] += 1
+        self.stats[ stat_tuple ][ 'len' ] += int( length )
+        return timestamp
 
-    def sniff( self ):
-        while not self.stop_event.is_set():
-            line = self.tcpdump_process.stdout.readline()
-            timestamp = self.process_line( line )
-            # Write output to file if a minute or more has passed since last write
+    def parse( self ):
+        while not self.parser_stop_event.is_set():
+            chunk = self.lines[ :NUM_LINES_PER_CHUNK ]
+            self.lines = self.lines[ NUM_LINES_PER_CHUNK: ]
+            print( len( self.lines ) )
+            timestamp = None
+            for line in chunk:
+                timestamp = self.process_line( line )
             if timestamp is not None and ( ( datetime.strptime( timestamp, '%Y-%m-%d %H:%M' ) - self.last_write_timestamp ).seconds > 60 ):
                 self.write_outfile()
-        # tcpdump has exited. Consume any remaining output
-        for line in self.tcpdump_process.stdout.readlines():
+            time.sleep( 0.5 )   # Do not overwhelm the system when load is high
+        # tcpdump has exited. Process any remaining lines
+        for line in self.lines:
             self.process_line( line )
         self.write_outfile( dump_all=True )
         self.outfile.close()
+
+    def sniff( self ):
+        while not self.sniffer_stop_event.is_set():
+            line = self.tcpdump_process.stdout.readline().decode( 'utf-8' )
+            if 'IP' in line:    # '' or '\n' or similar junk
+                self.lines.append( line ) # use another thread for consuming x number of lines every y seconds from self.lines and processing them
+        # tcpdump has exited. Consume any remaining output
+        for line in self.tcpdump_process.stdout.readlines():
+            line = line.decode( 'utf-8' )
+            if 'IP' in line:
+                self.lines.append( line )
         # Print tcpdump stats
         print( 'tcpdump stats:' )
         for line in self.tcpdump_process.stderr.readlines()[ -3: ]:
@@ -73,15 +90,17 @@ class Sniffer:
 
     def launch_tcpdump( self ):
         try:
-            self.tcpdump_process = subprocess.Popen( [ 'tcpdump', '-i', self.interface, '-n', '-B', '4096', '-q', '-tttt', '--immediate-mode', 'udp or tcp' ],
+            self.tcpdump_process = subprocess.Popen( [ 'tcpdump', '-i', self.interface, '-n', '-B', '4096', '-q', '-tttt', 'udp or tcp' ],
                                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE )
         except Exception as e:
             print( "Unexpected Error: ", str( e ) )
 
     def stop( self ):
         self.tcpdump_process.terminate()
-        self.stop_event.set()
-        self.sniff_thread.join()
+        self.sniffer_stop_event.set()
+        self.sniffer_thread.join()
+        self.parser_stop_event.set()
+        self.parser_thread.join()
 
 def get_parser() -> ArgumentParser:
     parser = ArgumentParser( description="IP-Version-Stats: A tool to monitor network traffic and obtain IPv4 vs IPv6 traffic statistics. "
