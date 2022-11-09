@@ -1,17 +1,34 @@
+# On OpenWRT, br-lan is the default bridge device that contains both Ethernet and Wireless LAN interfaces.
+# The following config assumes this is the case:
+# 1) Packets with output intf br-lan => Rx packets (from Internet)
+# 2) Packets with input intf br-lan => Tx packets (to Internet)
+#
+# Usage: 1) Configure:  nft -f counters.nft
+#        2) View:       nft list counters
+
+# Bridge interface name
+define brIntf = "br-lan"
+
 # IPv4 In/Out TCP/UDP counts
-add table ip Count4
-add chain ip Count4 InCount { type filter hook input priority filter - 1; policy accept; }
-add rule ip Count4 InCount ip protocol tcp counter accept
-add rule ip Count4 InCount ip protocol udp counter accept
-add chain ip Count4 OutCount { type filter hook output priority filter - 1; policy accept; }
-add rule ip Count4 OutCount ip protocol tcp counter accept
-add rule ip Count4 OutCount ip protocol udp counter accept
+add table ip IPv4Stats
+add counter ip IPv4Stats v4_tcp_tx
+add counter ip IPv4Stats v4_tcp_rx
+add counter ip IPv4Stats v4_udp_tx
+add counter ip IPv4Stats v4_udp_rx
+add chain ip IPv4Stats UpdateCounters { type filter hook forward priority filter - 1; policy accept; }
+add rule ip IPv4Stats UpdateCounters meta iifname $brIntf ip protocol tcp counter name v4_tcp_tx
+add rule ip IPv4Stats UpdateCounters meta oifname $brIntf ip protocol tcp counter name v4_tcp_rx
+add rule ip IPv4Stats UpdateCounters meta iifname $brIntf ip protocol udp counter name v4_udp_tx
+add rule ip IPv4Stats UpdateCounters meta oifname $brIntf ip protocol udp counter name v4_udp_rx
 
 # IPv6 In/Out TCP/UDP counts
-add table ip6 Count6
-add chain ip6 Count6 InCount { type filter hook input priority filter - 1; policy accept; }
-add rule ip6 Count6 InCount meta l4proto tcp counter accept
-add rule ip6 Count6 InCount meta l4proto udp counter accept
-add chain ip6 Count6 OutCount { type filter hook output priority filter - 1; policy accept; }
-add rule ip6 Count6 OutCount meta l4proto tcp counter accept
-add rule ip6 Count6 OutCount meta l4proto udp counter accept
+add table ip6 IPv6Stats
+add counter ip6 IPv6Stats v6_tcp_tx
+add counter ip6 IPv6Stats v6_tcp_rx
+add counter ip6 IPv6Stats v6_udp_tx
+add counter ip6 IPv6Stats v6_udp_rx
+add chain ip6 IPv6Stats UpdateCounters { type filter hook forward priority filter - 1; policy accept; }
+add rule ip6 IPv6Stats UpdateCounters meta iifname $brIntf meta l4proto tcp counter name v6_tcp_tx
+add rule ip6 IPv6Stats UpdateCounters meta oifname $brIntf meta l4proto tcp counter name v6_tcp_rx
+add rule ip6 IPv6Stats UpdateCounters meta iifname $brIntf meta l4proto udp counter name v6_udp_tx
+add rule ip6 IPv6Stats UpdateCounters meta oifname $brIntf meta l4proto udp counter name v6_udp_rx
