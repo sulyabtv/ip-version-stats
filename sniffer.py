@@ -1,16 +1,16 @@
 from argparse import ArgumentParser
+import subprocess
 import sys
 import os
 import time
 from typing import Optional
 from datetime import datetime
+import re
+import threading
 
-from scapy.all import get_if_list, conf
-from scapy.sendrecv import AsyncSniffer
-from scapy.sessions import IPSession
-from scapy.packet import Packet
-from scapy.layers.inet import IP, TCP, UDP
-from scapy.layers.inet6 import IPv6
+from scapy.all import get_if_list
+
+NUM_LINES_PER_CHUNK = 5000
 
 class Sniffer:
     def __init__( self, outpath: str, interface: Optional[ str ] ):
@@ -18,65 +18,89 @@ class Sniffer:
         self.interface = interface
         self.stats = {}
         self.last_write_timestamp = datetime.now()
+        self.tcpdump_process = None
+        self.sniffer_stop_event = threading.Event()
+        self.parser_stop_event = threading.Event()
+        self.pattern = re.compile( "(.*):\d\d\.\d+ (IP|IP6) (.*)\.(\d+) > (.*)\.(\d+): (UDP|tcp).* (\d+)" )
+        self.lines = []
         try:
             print( "Starting sniffer" + ( "" if not self.interface else " on interface " + self.interface ) + ".." )
-            self.outfile = open( self.outpath, 'w' )
-            self.sniffer = AsyncSniffer( iface=self.interface,
-                                         session=IPSession,
-                                         store=False,
-                                         prn=lambda packet: self.process_packet( packet ) )
-            self.sniffer.start()
+            self.outfile = open( self.outpath, 'a' )
+            self.launch_tcpdump()
+            self.sniffer_thread = threading.Thread( target=self.sniff, args=(), name='sniffer_thread' )
+            self.parser_thread = threading.Thread( target=self.parse, args=(), name='parser_thread' )
+            self.sniffer_thread.start()
+            self.parser_thread.start()
             print( "Started sniffer" + ( "" if not self.interface else " on interface " + self.interface ) )
         except Exception:
             raise
 
-    def stop( self ):
-        self.sniffer.stop( join=True )
-        self.write_outfile( dump_all=True )
-        self.outfile.close()
-
     def write_outfile( self, dump_all=False ):
         cur_timestamp = datetime.now().strftime( '%Y-%m-%d %H:%M' )
         for stat_tuple in list( self.stats ):
-            ( timestamp, version, src, dst, transport, sport, dport ) = stat_tuple
-            if dump_all or cur_timestamp[ -2: ] != timestamp[ -2: ]:  # Compare minute values
-                self.outfile.write( f"{ timestamp } { version } { src } { dst } { transport } { sport } { dport } "
+            ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport ) = stat_tuple
+            if dump_all or cur_timestamp[ -1 ] != timestamp[ -1 ]:  # Compare minute values
+                self.outfile.write( f"{ timestamp } { version } { src_ip } { src_port } { dst_ip } { dst_port } { transport } "
                                     f"{ self.stats[ stat_tuple ][ 'count' ] } { self.stats[ stat_tuple ][ 'len' ] }\n" )
                 del self.stats[ stat_tuple ]
         self.outfile.flush()
         self.last_write_timestamp = datetime.now()
 
-    def process_packet( self, packet: Packet ):
-        for ip_class in [ IP, IPv6 ]:
-            if ip_class in packet:
-                ip_layer = packet.getlayer( ip_class )
-                timestamp = datetime.now()
-                src = str( ip_layer.getfieldval( 'src' ) )
-                dst = str( ip_layer.getfieldval( 'dst' ) )
-                if ip_class == IP:
-                    len = ip_layer.getfieldval( 'len' ) - ( 4 * ip_layer.getfieldval( 'ihl' ) ) # Packet size minus header size
-                else:   # IPv6
-                    len = ip_layer.getfieldval( 'plen' )    # Ignoring Jumbo Payloads for now
-                found_transport = False
-                for transport_class in [ TCP, UDP ]:
-                    if transport_class in packet:
-                        found_transport = True
-                        transport_layer = packet.getlayer( transport_class )
-                        transport = 'TCP' if transport_class == TCP else 'UDP'
-                        sport = str( transport_layer.getfieldval( 'sport' ) )
-                        dport = str( transport_layer.getfieldval( 'dport' ) )
-                if not found_transport:
-                    transport = 'OTH'
-                    sport = dport = '0'
-                # Update stats dictionary
-                stat_tuple = ( timestamp.strftime( '%Y-%m-%d %H:%M' ), "4" if ip_class == IP else "6", src, dst, transport, sport, dport )
-                if stat_tuple not in self.stats:
-                    self.stats[ stat_tuple ] = { 'count': 0, 'len': 0 }
-                self.stats[ stat_tuple ][ 'count' ] += 1
-                self.stats[ stat_tuple ][ 'len' ] += len
-                # Write output to file if a minute or more has passed since last write
-                if ( timestamp - self.last_write_timestamp ).seconds > 60:
-                    self.write_outfile()
+    def process_line( self, line: str ):
+        ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport, length ) = self.pattern.match( line ).groups()
+        # Update stats dictionary
+        stat_tuple = ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport )
+        if stat_tuple not in self.stats:
+            self.stats[ stat_tuple ] = { 'count': 0, 'len': 0 }
+        self.stats[ stat_tuple ][ 'count' ] += 1
+        self.stats[ stat_tuple ][ 'len' ] += int( length )
+        return timestamp
+
+    def parse( self ):
+        while not self.parser_stop_event.is_set():
+            chunk = self.lines[ :NUM_LINES_PER_CHUNK ]
+            self.lines = self.lines[ NUM_LINES_PER_CHUNK: ]
+            print( len( self.lines ) )
+            timestamp = None
+            for line in chunk:
+                timestamp = self.process_line( line )
+            if timestamp is not None and ( ( datetime.strptime( timestamp, '%Y-%m-%d %H:%M' ) - self.last_write_timestamp ).seconds > 60 ):
+                self.write_outfile()
+            time.sleep( 0.5 )   # Do not overwhelm the system when load is high
+        # tcpdump has exited. Process any remaining lines
+        for line in self.lines:
+            self.process_line( line )
+        self.write_outfile( dump_all=True )
+        self.outfile.close()
+
+    def sniff( self ):
+        while not self.sniffer_stop_event.is_set():
+            line = self.tcpdump_process.stdout.readline().decode( 'utf-8' )
+            if 'IP' in line:    # '' or '\n' or similar junk
+                self.lines.append( line ) # use another thread for consuming x number of lines every y seconds from self.lines and processing them
+        # tcpdump has exited. Consume any remaining output
+        for line in self.tcpdump_process.stdout.readlines():
+            line = line.decode( 'utf-8' )
+            if 'IP' in line:
+                self.lines.append( line )
+        # Print tcpdump stats
+        print( 'tcpdump stats:' )
+        for line in self.tcpdump_process.stderr.readlines()[ -3: ]:
+            print( line.decode( 'utf-8' )[ :-1 ] )
+
+    def launch_tcpdump( self ):
+        try:
+            self.tcpdump_process = subprocess.Popen( [ 'tcpdump', '-i', self.interface, '-n', '-B', '4096', '-q', '-tttt', 'udp or tcp' ],
+                                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE )
+        except Exception as e:
+            print( "Unexpected Error: ", str( e ) )
+
+    def stop( self ):
+        self.tcpdump_process.terminate()
+        self.sniffer_stop_event.set()
+        self.sniffer_thread.join()
+        self.parser_stop_event.set()
+        self.parser_thread.join()
 
 def get_parser() -> ArgumentParser:
     parser = ArgumentParser( description="IP-Version-Stats: A tool to monitor network traffic and obtain IPv4 vs IPv6 traffic statistics. "
@@ -108,7 +132,7 @@ def main():
             sys.exit( "Please run this tool as root/administrator." )
     # If running on Windows, do not run in promiscuous mode
     elif os.name == 'nt':
-        conf.sniff_promisc = False
+        pass
     # java is untested for now
     else:
         sys.exit( "Unsupported platform" )
