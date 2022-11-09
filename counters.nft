@@ -1,0 +1,17 @@
+# IPv4 In/Out TCP/UDP counts
+add table ip Count4
+add chain ip Count4 InCount { type filter hook input priority filter - 1; policy accept; }
+add rule ip Count4 InCount ip protocol tcp counter accept
+add rule ip Count4 InCount ip protocol udp counter accept
+add chain ip Count4 OutCount { type filter hook output priority filter - 1; policy accept; }
+add rule ip Count4 OutCount ip protocol tcp counter accept
+add rule ip Count4 OutCount ip protocol udp counter accept
+
+# IPv6 In/Out TCP/UDP counts
+add table ip6 Count6
+add chain ip6 Count6 InCount { type filter hook input priority filter - 1; policy accept; }
+add rule ip6 Count6 InCount meta l4proto tcp counter accept
+add rule ip6 Count6 InCount meta l4proto udp counter accept
+add chain ip6 Count6 OutCount { type filter hook output priority filter - 1; policy accept; }
+add rule ip6 Count6 OutCount meta l4proto tcp counter accept
+add rule ip6 Count6 OutCount meta l4proto udp counter accept
