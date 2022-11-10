@@ -3,7 +3,6 @@ import subprocess
 import sys
 import os
 import time
-from typing import Optional
 from datetime import datetime
 import re
 import threading
@@ -11,11 +10,14 @@ import threading
 from scapy.all import get_if_list
 
 NUM_LINES_PER_CHUNK = 500
+COUNTERS_CONF_FILE = 'counters.nft'
 
 class Sniffer:
-    def __init__( self, outpath: str, interface: Optional[ str ] ):
+    def __init__( self, outpath: str, counters: bool, interface: str ):
         self.outpath = outpath
+        self.counters = counters
         self.interface = interface
+        self.filename = datetime.strftime( datetime.now(), '%Y-%m-%d_%H%M' )
         self.stats = {}
         self.last_write_timestamp = datetime.now()
         self.tcpdump_process = None
@@ -25,9 +27,14 @@ class Sniffer:
         self.lines = []
         try:
             print( "Starting sniffer" + ( "" if not self.interface else " on interface " + self.interface ) + ".." )
-            self.outfile_cap = open( self.outpath + '.cap', 'w' )
-            self.outfile_cnt = open( self.outpath + '.cnt', 'w' )
-            print( f"Output files: { self.outpath }.cap, { self.outpath }.cnt" )
+            self.full_path_base = self.outpath + '/' + self.filename
+            self.outfile_cap = open( self.full_path_base + '.cap', 'w' )
+            if self.counters:
+                self.outfile_cnt = open( self.full_path_base + '.cnt', 'w' )
+                self.configure_nft_counters()
+                print( f"Output files: { self.full_path_base }.cap, { self.full_path_base }.cnt" )
+            else:
+                print( f"Output file: { self.full_path_base }.cap" )
             self.launch_tcpdump()
             self.sniffer_thread = threading.Thread( target=self.sniff, args=(), name='sniffer_thread' )
             self.parser_thread = threading.Thread( target=self.parse, args=(), name='parser_thread' )
@@ -46,6 +53,12 @@ class Sniffer:
                                         f"{ self.stats[ stat_tuple ] }\n" )
                 del self.stats[ stat_tuple ]
         self.outfile_cap.flush()
+        if self.counters:
+            counters_output = subprocess.run( [ 'nft', 'list', 'counters' ], stdout=subprocess.PIPE )
+            self.outfile_cnt.seek( 0 )
+            self.outfile_cnt.truncate()
+            self.outfile_cnt.write( counters_output.stdout.decode( 'utf-8' ) )
+            self.outfile_cnt.flush()
         self.last_write_timestamp = datetime.now()
 
     def process_line( self, line: str ):
@@ -53,17 +66,14 @@ class Sniffer:
         # Update stats dictionary
         stat_tuple = ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport )
         self.stats[ stat_tuple ] = self.stats.get( stat_tuple, 0 ) + 1
-        return timestamp
 
     def parse( self ):
         while not self.parser_stop_event.is_set():
             chunk = self.lines[ :NUM_LINES_PER_CHUNK ]
             self.lines = self.lines[ NUM_LINES_PER_CHUNK: ]
-            print( len( self.lines ) )
-            timestamp = None
             for line in chunk:
-                timestamp = self.process_line( line )
-            if timestamp is not None and ( ( datetime.strptime( timestamp, '%Y-%m-%d %H:%M' ) - self.last_write_timestamp ).seconds > 300 ):
+                self.process_line( line )
+            if ( datetime.now() - self.last_write_timestamp ).seconds > 300:
                 self.write_outfiles()
             time.sleep( 1 )   # Do not overwhelm the system when load is high
         # tcpdump has exited. Process any remaining lines
@@ -71,7 +81,8 @@ class Sniffer:
             self.process_line( line )
         self.write_outfiles( dump_all=True )
         self.outfile_cap.close()
-        self.outfile_cnt.close()
+        if self.counters:
+            self.outfile_cnt.close()
 
     def sniff( self ):
         while not self.sniffer_stop_event.is_set():
@@ -100,6 +111,23 @@ class Sniffer:
         except Exception as e:
             print( "Unexpected Error: ", str( e ) )
 
+    def configure_nft_counters( self ):
+        # Hacky af but will do for now
+        with open( COUNTERS_CONF_FILE, 'r' ) as f:
+            counters_file_contents = f.read()
+        counters_file_contents = counters_file_contents.replace( '"br-lan"', '"' + self.interface + '"' )
+        with open( COUNTERS_CONF_FILE, 'w' ) as f:
+            f.write( counters_file_contents )
+        # Delete relevant tables if they already exist
+        subprocess.run( [ 'nft', 'delete', 'table', 'ip', 'IPv4Stats' ] )
+        subprocess.run( [ 'nft', 'delete', 'table', 'ip6', 'IPv6Stats' ] )
+        # Configure nftables counters
+        subprocess.run( [ 'nft', '-f', COUNTERS_CONF_FILE ] )
+        # Revert the conf file
+        counters_file_contents = counters_file_contents.replace( '"' + self.interface + '"', '"br-lan"' )
+        with open( COUNTERS_CONF_FILE, 'w' ) as f:
+            f.write( counters_file_contents )
+
     def stop( self ):
         self.tcpdump_process.terminate()
         self.sniffer_stop_event.set()
@@ -113,13 +141,18 @@ def get_parser() -> ArgumentParser:
 
     # Arguments
     parser.add_argument( '-i', '--interface', dest='interface',
-                         default=None, type=str,
-                         help="Name (eg: eth0) of the interface on which to monitor traffic. "
-                              "If no interface name is provided, traffic will be monitored on all interfaces." )
+                         default='br-lan', type=str,
+                         help="Name (eg: eth0) of the interface on which to monitor traffic. Default: br-lan" )
     parser.add_argument( '-d', '--duration', dest='duration',
                          default=None, type=int,
                          help="Duration (in seconds) to run the sniffer. "
                               "If not provided, the sniffer will be run until the user issues Ctrl+C (KeyboardInterrupt)" )
+    parser.add_argument( '-o', '--outpath', dest='outpath',
+                         default='.', type=str,
+                         help="Path (eg: /tmp) to which output files will be written WITHOUT trailing forward slash. Default: ." )
+    parser.add_argument( '-c', '--counters', dest='counters', action='store_const',
+                         const=True, default=False,
+                         help="Configure nftables counters for IPv4/v6 statistics" )
 
     return parser
 
@@ -142,12 +175,12 @@ def main():
     # Sanity checks
     if args.duration is not None and args.duration <= 0:
         sys.exit( "Error: Duration must be an integer greater than 0" )
-    if args.interface is not None and args.interface not in get_if_list():
+    if args.interface not in get_if_list():
         sys.exit( "Error: Unknown interface name" )
 
     # Run sniffer
     try:
-        sniffer = Sniffer( datetime.strftime( datetime.now(), '%Y-%m-%d_%H%M' ), interface=args.interface )
+        sniffer = Sniffer( args.outpath, args.counters, args.interface )
         if args.duration is not None:
             print( "Sniffer will exit automatically in " + str( args.duration ) + " seconds. Press Ctrl+C (or equivalent) to stop early." )
             time.sleep( args.duration )
