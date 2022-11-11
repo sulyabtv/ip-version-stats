@@ -10,6 +10,7 @@ import threading
 from scapy.all import get_if_list
 
 NUM_LINES_PER_CHUNK = 500
+WRITE_INTERVAL = 300
 COUNTERS_CONF_FILE = 'counters.nft'
 
 class Sniffer:
@@ -62,10 +63,14 @@ class Sniffer:
         self.last_write_timestamp = datetime.now()
 
     def process_line( self, line: str ):
-        ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport ) = self.pattern.match( line ).groups()
-        # Update stats dictionary
-        stat_tuple = ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport )
-        self.stats[ stat_tuple ] = self.stats.get( stat_tuple, 0 ) + 1
+        matched = self.pattern.match( line )
+        if matched is not None:
+            ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport ) = matched.groups()
+            # Update stats dictionary
+            stat_tuple = ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport )
+            self.stats[ stat_tuple ] = self.stats.get( stat_tuple, 0 ) + 1
+        else:
+            print( "Could not parse tcpdump output: " + line )
 
     def parse( self ):
         while not self.parser_stop_event.is_set():
@@ -73,7 +78,7 @@ class Sniffer:
             self.lines = self.lines[ NUM_LINES_PER_CHUNK: ]
             for line in chunk:
                 self.process_line( line )
-            if ( datetime.now() - self.last_write_timestamp ).seconds > 300:
+            if ( datetime.now() - self.last_write_timestamp ).seconds > WRITE_INTERVAL:
                 self.write_outfiles()
             time.sleep( 1 )   # Do not overwhelm the system when load is high
         # tcpdump has exited. Process any remaining lines
