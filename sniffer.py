@@ -56,9 +56,8 @@ class Sniffer:
         self.outfile_cap.flush()
         if self.counters:
             counters_output = subprocess.run( [ 'nft', 'list', 'counters' ], stdout=subprocess.PIPE )
-            self.outfile_cnt.seek( 0 )
-            self.outfile_cnt.truncate()
-            self.outfile_cnt.write( counters_output.stdout.decode( 'utf-8' ) )
+            self.outfile_cnt.write( "Counters at " + cur_timestamp + ":\n" )
+            self.outfile_cnt.write( counters_output.stdout.decode( 'utf-8' ) + '\n' )
             self.outfile_cnt.flush()
         self.last_write_timestamp = datetime.now()
 
