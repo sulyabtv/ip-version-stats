@@ -38,67 +38,92 @@ def main():
         if matched is not None:
             info = matched.groups()
             timestamp = datetime.strptime( info[ 0 ], '%Y-%m-%d %H:%M' )
-            counts[ timestamp ] = { 'v4_tcp_tx': ( int( info[ 1 ] ), int( info[ 2 ] ) ),    'v4_tcp_rx': ( int( info[ 3 ] ), int( info[ 4 ] ) ) ,
-                                    'v4_udp_tx': ( int( info[ 5 ] ), int( info[ 6 ] ) ),    'v4_udp_rx': ( int( info[ 7 ] ), int( info[ 8 ] ) ),
-                                    'v6_tcp_tx': ( int( info[ 9 ] ), int( info[ 10 ] ) ),   'v6_tcp_rx': ( int( info[ 11 ] ), int( info[ 12 ] ) ),
-                                    'v6_udp_tx': ( int( info[ 13 ] ), int( info[ 14 ] ) ),  'v6_udp_rx': ( int( info[ 15 ] ), int( info[ 16 ] ) ) }
+            counts[ timestamp ] = { 'v4_tcp_txrx': ( int( info[ 1 ] ) + int( info[ 3 ] ),   int( info[ 2 ] ) + int( info[ 4 ] ) ),
+                                    'v4_udp_txrx': ( int( info[ 5 ] ) + int( info[ 7 ] ),   int( info[ 6 ] ) + int( info[ 8 ] ) ),
+                                    'v6_tcp_txrx': ( int( info[ 9 ] ) + int( info[ 11 ] ),  int( info[ 10 ] ) + int( info[ 12 ] ) ),
+                                    'v6_udp_txrx': ( int( info[ 13 ] ) + int( info[ 15 ] ), int( info[ 14 ] ) + int( info[ 16 ] ) ) }
     timestamps = list( counts.keys() )
     delta_counts = deepcopy( counts )
     for i in range( len( timestamps ) - 1 ):
         prev = timestamps[ i ]
         cur = timestamps[ i+1 ]
-        for field in ( 'v4_tcp_tx', 'v4_tcp_rx', 'v4_udp_tx', 'v4_udp_rx',
-                       'v6_tcp_tx', 'v6_tcp_rx', 'v6_udp_tx', 'v6_udp_rx' ):
+        for field in ( 'v4_tcp_txrx', 'v4_udp_txrx', 'v6_tcp_txrx', 'v6_udp_txrx' ):
             delta_counts[ cur ][ field ] = ( counts[ cur ][ field ][ 0 ] - counts[ prev ][ field ][ 0 ],
                                              counts[ cur ][ field ][ 1 ] - counts[ prev ][ field ][ 1 ] )
     
     # Set up plot
-    _, ( ax_pkts, ax_bytes ) = plt.subplots( 2, 1 )
+    _, ( ( ax_pkts, ax_bytes ), ( ax_pkts_delta, ax_bytes_delta ) ) = plt.subplots( 2, 2 )
     plt.ion()
     plt.get_current_fig_manager().full_screen_toggle()
-    # Plot 1: IPv4 and IPv6 packets vs Time
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v4_tcp_tx' ][ 0 ] for entry in delta_counts.values() ], label='IPv4 TCP Tx' )
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v4_tcp_rx' ][ 0 ] for entry in delta_counts.values() ], label='IPv4 TCP Rx' )
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v4_udp_tx' ][ 0 ] for entry in delta_counts.values() ], label='IPv4 UDP Tx' )
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v4_udp_rx' ][ 0 ] for entry in delta_counts.values() ], label='IPv4 UDP Rx' )
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v6_tcp_tx' ][ 0 ] for entry in delta_counts.values() ], label='IPv6 TCP Tx' )
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v6_tcp_rx' ][ 0 ] for entry in delta_counts.values() ], label='IPv6 TCP Rx' )
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v6_udp_tx' ][ 0 ] for entry in delta_counts.values() ], label='IPv6 UDP Tx' )
-    ax_pkts.plot( delta_counts.keys(), [ entry[ 'v6_udp_rx' ][ 0 ] for entry in delta_counts.values() ], label='IPv6 UDP Rx' )
-    ax_pkts.set_title( 'IPv4 and IPv6 traffic vs Time (in number of packets)' )
+
+    # Plot 1: IPv4 and IPv6 packets vs Time (Cumulative)
+    ax_pkts.plot( counts.keys(), [ entry[ 'v4_tcp_txrx' ][ 0 ] for entry in counts.values() ], color='red', label='IPv4 TCP Tx/Rx' )
+    ax_pkts.plot( counts.keys(), [ entry[ 'v4_udp_txrx' ][ 0 ] for entry in counts.values() ], color='orange', label='IPv4 UDP Tx/Rx' )
+    ax_pkts.plot( counts.keys(), [ entry[ 'v6_tcp_txrx' ][ 0 ] for entry in counts.values() ], color='blue', label='IPv6 TCP Tx/Rx' )
+    ax_pkts.plot( counts.keys(), [ entry[ 'v6_udp_txrx' ][ 0 ] for entry in counts.values() ], color='green', label='IPv6 UDP Tx/Rx' )
+    ax_pkts.set_title( 'IPv4 and IPv6 traffic (packets, cumulative) vs Time' )
     ax_pkts.set_xlabel( 'Timestamp' )
     ax_pkts.set_ylabel( '# of Packets' )
     # ax_pkts.set_yscale( 'log' )
-    ax_pkts.xaxis.set_major_formatter( dates.DateFormatter( '%Y-%m-%d %H:%M' ) )
+    ax_pkts.xaxis.set_major_formatter( dates.DateFormatter( '%m/%d %H:%M' ) )
     ax_pkts.xaxis.set_major_locator( dates.AutoDateLocator() )
-    ax_pkts.legend( loc='upper right' )
+    ax_pkts.legend( loc='upper left' )
 
-    # Plot 2: IPv4 and IPv6 bytes vs Time
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v4_tcp_tx' ][ 1 ] for entry in delta_counts.values() ], label='IPv4 TCP Tx' )
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v4_tcp_rx' ][ 1 ] for entry in delta_counts.values() ], label='IPv4 TCP Rx' )
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v4_udp_tx' ][ 1 ] for entry in delta_counts.values() ], label='IPv4 UDP Tx' )
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v4_udp_rx' ][ 1 ] for entry in delta_counts.values() ], label='IPv4 UDP Rx' )
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v6_tcp_tx' ][ 1 ] for entry in delta_counts.values() ], label='IPv6 TCP Tx' )
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v6_tcp_rx' ][ 1 ] for entry in delta_counts.values() ], label='IPv6 TCP Rx' )
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v6_udp_tx' ][ 1 ] for entry in delta_counts.values() ], label='IPv6 UDP Tx' )
-    ax_bytes.plot( delta_counts.keys(), [ entry[ 'v6_udp_rx' ][ 1 ] for entry in delta_counts.values() ], label='IPv6 UDP Rx' )
-    ax_bytes.set_title( 'IPv4 and IPv6 traffic vs Time (in bytes)' )
+    # Plot 2: IPv4 and IPv6 bytes vs Time (Cumulative)
+    ax_bytes.plot( counts.keys(), [ entry[ 'v4_tcp_txrx' ][ 1 ] for entry in counts.values() ], color='red', label='IPv4 TCP Tx/Rx' )
+    ax_bytes.plot( counts.keys(), [ entry[ 'v4_udp_txrx' ][ 1 ] for entry in counts.values() ], color='orange', label='IPv4 UDP Tx/Rx' )
+    ax_bytes.plot( counts.keys(), [ entry[ 'v6_tcp_txrx' ][ 1 ] for entry in counts.values() ], color='blue', label='IPv6 TCP Tx/Rx' )
+    ax_bytes.plot( counts.keys(), [ entry[ 'v6_udp_txrx' ][ 1 ] for entry in counts.values() ], color='green', label='IPv6 UDP Tx/Rx' )
+    ax_bytes.set_title( 'IPv4 and IPv6 traffic (bytes, cumulative) vs Time' )
     ax_bytes.set_xlabel( 'Timestamp' )
     ax_bytes.set_ylabel( 'Bytes' )
     # ax_bytes.set_yscale( 'log' )
-    ax_bytes.xaxis.set_major_formatter( dates.DateFormatter( '%Y-%m-%d %H:%M' ) )
+    ax_bytes.xaxis.set_major_formatter( dates.DateFormatter( '%m/%d %H:%M' ) )
     ax_bytes.xaxis.set_major_locator( dates.AutoDateLocator() )
-    ax_bytes.legend( loc='upper right' )
+    ax_bytes.legend( loc='upper left' )
+
+        
+    # Plot 3: IPv4 and IPv6 packets vs Time
+    ax_pkts_delta.plot( delta_counts.keys(), [ entry[ 'v4_tcp_txrx' ][ 0 ] for entry in delta_counts.values() ], color='red',
+                        label='IPv4 TCP Tx/Rx' )
+    ax_pkts_delta.plot( delta_counts.keys(), [ entry[ 'v4_udp_txrx' ][ 0 ] for entry in delta_counts.values() ], color='orange',
+                        label='IPv4 UDP Tx/Rx' )
+    ax_pkts_delta.plot( delta_counts.keys(), [ entry[ 'v6_tcp_txrx' ][ 0 ] for entry in delta_counts.values() ], color='blue',
+                        label='IPv6 TCP Tx/Rx' )
+    ax_pkts_delta.plot( delta_counts.keys(), [ entry[ 'v6_udp_txrx' ][ 0 ] for entry in delta_counts.values() ], color='green',
+                        label='IPv6 UDP Tx/Rx' )
+    ax_pkts_delta.set_title( 'IPv4 and IPv6 traffic (packets) vs Time' )
+    ax_pkts_delta.set_xlabel( 'Timestamp' )
+    ax_pkts_delta.set_ylabel( '# of Packets' )
+    # ax_pkts_delta.set_yscale( 'log' )
+    ax_pkts_delta.xaxis.set_major_formatter( dates.DateFormatter( '%m/%d %H:%M' ) )
+    ax_pkts_delta.xaxis.set_major_locator( dates.AutoDateLocator() )
+    ax_pkts_delta.legend( loc='upper right' )
+
+    # Plot 4: IPv4 and IPv6 bytes vs Time
+    ax_bytes_delta.plot( delta_counts.keys(), [ entry[ 'v4_tcp_txrx' ][ 1 ] for entry in delta_counts.values() ], color='red',
+                         label='IPv4 TCP Tx/Rx' )
+    ax_bytes_delta.plot( delta_counts.keys(), [ entry[ 'v4_udp_txrx' ][ 1 ] for entry in delta_counts.values() ], color='orange',
+                         label='IPv4 UDP Tx/Rx' )
+    ax_bytes_delta.plot( delta_counts.keys(), [ entry[ 'v6_tcp_txrx' ][ 1 ] for entry in delta_counts.values() ], color='blue',
+                         label='IPv6 TCP Tx/Rx' )
+    ax_bytes_delta.plot( delta_counts.keys(), [ entry[ 'v6_udp_txrx' ][ 1 ] for entry in delta_counts.values() ], color='green',
+                         label='IPv6 UDP Tx/Rx' )
+    ax_bytes_delta.set_title( 'IPv4 and IPv6 traffic (bytes) vs Time' )
+    ax_bytes_delta.set_xlabel( 'Timestamp' )
+    ax_bytes_delta.set_ylabel( 'Bytes' )
+    # ax_bytes_delta.set_yscale( 'log' )
+    ax_bytes_delta.xaxis.set_major_formatter( dates.DateFormatter( '%m/%d %H:%M' ) )
+    ax_bytes_delta.xaxis.set_major_locator( dates.AutoDateLocator() )
+    ax_bytes_delta.legend( loc='upper right' )
 
     # Text outputs
     last_timestamp = timestamps[ -1 ]
     for index, metric in zip( ( 0, 1 ), ( 'packets', 'bytes' ) ):
-        tcp_ipv4_total = counts[ last_timestamp ][ 'v4_tcp_tx' ][ index ] + counts[ last_timestamp ][ 'v4_tcp_rx' ][ index ]
-        udp_ipv4_total = counts[ last_timestamp ][ 'v4_udp_tx' ][ index ] + counts[ last_timestamp ][ 'v4_udp_rx' ][ index ]
-        tcp_ipv6_total = counts[ last_timestamp ][ 'v6_tcp_tx' ][ index ] + counts[ last_timestamp ][ 'v6_tcp_rx' ][ index ]
-        udp_ipv6_total = counts[ last_timestamp ][ 'v6_udp_tx' ][ index ] + counts[ last_timestamp ][ 'v6_udp_rx' ][ index ]
-        tcp_ipv4_pct = 100 * tcp_ipv4_total / ( tcp_ipv4_total + tcp_ipv6_total )
-        udp_ipv4_pct = 100 * udp_ipv4_total / ( udp_ipv4_total + udp_ipv6_total )
+        tcp_ipv4_pct = 100 * counts[ last_timestamp ][ 'v4_tcp_txrx' ][ index ] / ( counts[ last_timestamp ][ 'v4_tcp_txrx' ][ index ] +
+                                                                                    counts[ last_timestamp ][ 'v6_tcp_txrx' ][ index ] )
+        udp_ipv4_pct = 100 * counts[ last_timestamp ][ 'v4_udp_txrx' ][ index ] / ( counts[ last_timestamp ][ 'v4_udp_txrx' ][ index ] +
+                                                                                    counts[ last_timestamp ][ 'v6_udp_txrx' ][ index ] )
         print( f"Percentage breakdown of TCP traffic (in {metric}): IPv4: {tcp_ipv4_pct: .2f}, IPv6: {( 100 - tcp_ipv4_pct ): .2f}" )
         print( f"Percentage breakdown of UDP traffic (in {metric}): IPv4: {udp_ipv4_pct: .2f}, IPv6: {( 100 - udp_ipv4_pct ): .2f}" )
 
