@@ -24,7 +24,7 @@ class Sniffer:
         self.tcpdump_process = None
         self.sniffer_stop_event = threading.Event()
         self.parser_stop_event = threading.Event()
-        self.pattern = re.compile( "(.*):\d\d\.\d+ (IP|IP6) (.*)\.(\d+) > (.*)\.(\d+): (UDP|tcp).*" )
+        self.pattern = re.compile( "(.*):\d\d\.\d+ (IP|IP6) (.*)\.(\d+) > (.*)\.(\d+): (UDP|Flags \[(.*)\], seq ).*" )
         self.lines = []
         try:
             print( "Starting sniffer" + ( "" if not self.interface else " on interface " + self.interface ) + ".." )
@@ -64,7 +64,15 @@ class Sniffer:
     def process_line( self, line: str ):
         matched = self.pattern.match( line )
         if matched is not None:
-            ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport ) = matched.groups()
+            groups = matched.groups()
+            ( timestamp, version, src_ip, src_port, dst_ip, dst_port ) = groups[ :6 ]
+            if ( type( groups[-1] ) == str ):
+                if ( ( 'S' in groups[ -1 ] ) and ( '.' in groups[ -1 ] ) ):
+                    transport = 'tcp'
+                else:
+                    transport = 'tcpSampled'
+            else:
+                transport = 'UDP'
             # Update stats dictionary
             stat_tuple = ( timestamp, version, src_ip, src_port, dst_ip, dst_port, transport )
             self.stats[ stat_tuple ] = self.stats.get( stat_tuple, 0 ) + 1
@@ -105,12 +113,14 @@ class Sniffer:
 
     def launch_tcpdump( self ):
         try:
-            # God died the day this unholy piece of code was written
-            capture_str = ( "(((tcp[13] & 0x12) == 0x12) ||"                    # Match IPv4 TCP SYN+ACK packets
-                            " (ip6[6] == 6 && ((ip6[53] & 0x12) == 0x12)) ||"   # Match IPv6 TCP SYN+ACK packets
-                            " (udp && (((ip[11] & 0x7F) == 0x7F) ||"            # Match roughly 1/128 of IPv4 UDP packets
-                            "          ((ip6[47] & 0x7F) == 0x7F))))" )         # Match roughly 1/128 of IPv6 UDP packets
-            self.tcpdump_process = subprocess.Popen( [ 'tcpdump', '-i', self.interface, '-n', '-B', '4096', '-q', '-tttt', '-s100', capture_str ],
+            # Good luck
+            capture_str = ( "((tcp && (((tcp[13] & 0x12) == 0x12) ||"                   # Match IPv4 SYN+ACK
+                            "          (ip6[6] == 6 && ((ip6[53] & 0x12) == 0x12)) || " # Match IPv6 SYN+ACK
+                            "          (tcp[17] == 0xAA) || "                           # Match roughly 1/256 of IPv4 TCP packets
+                            "          (ip6[57] == 0xAA))) || "                         # Match roughly 1/256 of IPv6 TCP packets
+                            " (udp && ((ip[11] == 0xAA) ||"                             # Match roughly 1/256 of IPv4 UDP packets
+                            "          (ip6[47] == 0xAA))))" )                          # Match roughly 1/256 of IPv6 UDP packets
+            self.tcpdump_process = subprocess.Popen( [ 'tcpdump', '-i', self.interface, '-n', '-B', '4096', '-tttt', '-s100', capture_str ],
                                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE )
         except Exception as e:
             print( "Unexpected Error: ", str( e ) )
