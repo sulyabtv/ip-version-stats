@@ -82,10 +82,11 @@ class Sniffer:
 
     def parse( self ):
         while not self.parser_stop_event.is_set():
-            for lines, is_tcp_syn_ack in zip ( ( self.tcp_lines, self.sample_lines ),
-                                               ( True, False ) ):
-                chunk = lines[ :NUM_LINES_PER_CHUNK ]
-                lines = lines[ NUM_LINES_PER_CHUNK: ]
+            tcp_chunk = self.tcp_lines[ :NUM_LINES_PER_CHUNK ]
+            sample_chunk = self.sample_lines[ :NUM_LINES_PER_CHUNK ]
+            self.tcp_lines = self.tcp_lines[ NUM_LINES_PER_CHUNK: ]
+            self.sample_lines = self.sample_lines[ NUM_LINES_PER_CHUNK: ]
+            for chunk, is_tcp_syn_ack in zip( ( tcp_chunk, sample_chunk ), ( True, False ) ):
                 for line in chunk:
                     self.process_line( line, is_tcp_syn_ack )
             if ( datetime.now() - self.last_write_timestamp ).seconds > WRITE_INTERVAL:
