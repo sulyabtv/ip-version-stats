@@ -127,15 +127,14 @@ def resolve( from_addr: str, to_addr: str,
     return ( resolved_domain, resolved_as )
 
 def get_key( ip_version: str, transport: str ):
-    assert ip_version in ( 'IP', 'IP6' ) and transport in ( 'UDP', 'tcp' )
-    if ip_version == 'IP':
-        if transport == 'UDP':
-            return 'v4UDP'
-        return 'v4TCP'
+    assert ip_version in ( 'IP', 'IP6' ) and transport in ( 'tcp', 'tcp_sample', 'udp_sample' )
+    prefix = ( 'v4' if ip_version == 'IP' else 'v6' )
+    if transport == 'tcp_sample':
+        return prefix + 'TCP'
+    elif transport == 'udp_sample':
+        return prefix + 'UDP'
     else:
-        if transport == 'UDP':
-            return 'v6UDP'
-        return 'v6TCP'
+        return prefix + 'TCPSynAck'
 
 def process_cap( cap_path: str, timestamps: list[ datetime ],
                  ignored_ips: list, ignored_domains: list, ignored_as: list,
@@ -144,8 +143,8 @@ def process_cap( cap_path: str, timestamps: list[ datetime ],
     as_db = pyasn( 'as.db' )
     interval_stats = {}
     for timestamp, chunk in tqdm( chunks.items() ):
-        interval_stats[ timestamp ] = { 'domains': { 'v4TCP': {}, 'v4UDP': {}, 'v6TCP': {}, 'v6UDP': {} },
-                                        'as':      { 'v4TCP': {}, 'v4UDP': {}, 'v6TCP': {}, 'v6UDP': {} } }
+        interval_stats[ timestamp ] = { 'domains': { 'v4TCPSynAck': {}, 'v6TCPSynAck': {}, 'v4TCP': {}, 'v4UDP': {}, 'v6TCP': {}, 'v6UDP': {} },
+                                        'as':      { 'v4TCPSynAck': {}, 'v6TCPSynAck': {}, 'v4TCP': {}, 'v4UDP': {}, 'v6TCP': {}, 'v6UDP': {} } }
         for line in chunk:
             ( ip_version, src_ip, src_port, dst_ip, dst_port, transport, count ) = line.split()
             ( domain, asn ) = resolve( src_ip, dst_ip,
