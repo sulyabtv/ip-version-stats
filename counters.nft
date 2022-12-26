@@ -10,25 +10,25 @@
 define brIntf = "br-lan"
 
 # IPv4 In/Out TCP/UDP counts
-add table ip IPv4Stats
-add counter ip IPv4Stats v4_tcp_tx
-add counter ip IPv4Stats v4_tcp_rx
-add counter ip IPv4Stats v4_udp_tx
-add counter ip IPv4Stats v4_udp_rx
-add chain ip IPv4Stats UpdateCounters { type filter hook forward priority filter - 1; policy accept; }
-add rule ip IPv4Stats UpdateCounters meta iifname $brIntf ip protocol tcp counter name v4_tcp_tx
-add rule ip IPv4Stats UpdateCounters meta oifname $brIntf ip protocol tcp counter name v4_tcp_rx
-add rule ip IPv4Stats UpdateCounters meta iifname $brIntf ip protocol udp counter name v4_udp_tx
-add rule ip IPv4Stats UpdateCounters meta oifname $brIntf ip protocol udp counter name v4_udp_rx
+add table ip v4PktCounters
+add counter ip v4PktCounters v4_tcp_tx
+add counter ip v4PktCounters v4_tcp_rx
+add counter ip v4PktCounters v4_udp_tx
+add counter ip v4PktCounters v4_udp_rx
+add chain ip v4PktCounters UpdateCounters { type filter hook forward priority filter - 1; policy accept; }
+add rule ip v4PktCounters UpdateCounters meta iifname $brIntf ip protocol tcp counter name v4_tcp_tx
+add rule ip v4PktCounters UpdateCounters meta oifname $brIntf ip protocol tcp counter name v4_tcp_rx
+add rule ip v4PktCounters UpdateCounters meta iifname $brIntf ip protocol udp counter name v4_udp_tx
+add rule ip v4PktCounters UpdateCounters meta oifname $brIntf ip protocol udp counter name v4_udp_rx
 
 # IPv6 In/Out TCP/UDP counts
-add table ip6 IPv6Stats
-add counter ip6 IPv6Stats v6_tcp_tx
-add counter ip6 IPv6Stats v6_tcp_rx
-add counter ip6 IPv6Stats v6_udp_tx
-add counter ip6 IPv6Stats v6_udp_rx
-add chain ip6 IPv6Stats UpdateCounters { type filter hook forward priority filter - 1; policy accept; }
-add rule ip6 IPv6Stats UpdateCounters meta iifname $brIntf meta l4proto tcp counter name v6_tcp_tx
-add rule ip6 IPv6Stats UpdateCounters meta oifname $brIntf meta l4proto tcp counter name v6_tcp_rx
-add rule ip6 IPv6Stats UpdateCounters meta iifname $brIntf meta l4proto udp counter name v6_udp_tx
-add rule ip6 IPv6Stats UpdateCounters meta oifname $brIntf meta l4proto udp counter name v6_udp_rx
+add table ip6 v6PktCounters
+add counter ip6 v6PktCounters v6_tcp_tx
+add counter ip6 v6PktCounters v6_tcp_rx
+add counter ip6 v6PktCounters v6_udp_tx
+add counter ip6 v6PktCounters v6_udp_rx
+add chain ip6 v6PktCounters UpdateCounters { type filter hook forward priority filter - 1; policy accept; }
+add rule ip6 v6PktCounters UpdateCounters meta iifname $brIntf meta l4proto tcp counter name v6_tcp_tx
+add rule ip6 v6PktCounters UpdateCounters meta oifname $brIntf meta l4proto tcp counter name v6_tcp_rx
+add rule ip6 v6PktCounters UpdateCounters meta iifname $brIntf meta l4proto udp counter name v6_udp_tx
+add rule ip6 v6PktCounters UpdateCounters meta oifname $brIntf meta l4proto udp counter name v6_udp_rx
